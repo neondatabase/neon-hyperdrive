@@ -1,32 +1,36 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
+import { Client } from 'pg';
 
 export interface Env {
-	// Example binding to KV. Learn more at https://developers.cloudflare.com/workers/runtime-apis/kv/
-	// MY_KV_NAMESPACE: KVNamespace;
-	//
-	// Example binding to Durable Object. Learn more at https://developers.cloudflare.com/workers/runtime-apis/durable-objects/
-	// MY_DURABLE_OBJECT: DurableObjectNamespace;
-	//
-	// Example binding to R2. Learn more at https://developers.cloudflare.com/workers/runtime-apis/r2/
-	// MY_BUCKET: R2Bucket;
-	//
-	// Example binding to a Service. Learn more at https://developers.cloudflare.com/workers/runtime-apis/service-bindings/
-	// MY_SERVICE: Fetcher;
-	//
-	// Example binding to a Queue. Learn more at https://developers.cloudflare.com/queues/javascript-apis/
-	// MY_QUEUE: Queue;
+	NeonHyperdrive: Hyperdrive;
 }
 
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-		return new Response('Hello World!');
+		const
+		  t0 = performance.now(),
+			client = new Client(env.NeonHyperdrive.connectionString),
+			cf: any = request.cf ?? { longitude: '-122.473831', latitude: '37.818496' },
+			longitude = parseFloat(cf.longitude),
+			latitude = parseFloat(cf.latitude);
+
+		try {
+			await client.connect();
+			const result = await client.query(`
+				SELECT 
+					id_no, name_en, category,
+					'https://whc.unesco.org/en/list/' || id_no || '/' AS link,
+					location <-> st_makepoint($1, $2) AS distance
+				FROM whc_sites_2021
+				ORDER BY distance
+				LIMIT 10`,
+				[longitude, latitude]
+			);
+
+			const ms = performance.now() - t0;
+			return Response.json({ ms, sites: result.rows });
+
+		} catch (e) {
+			return Response.json({ error: JSON.stringify(e) }, { status: 500 });
+		}
 	},
 };
